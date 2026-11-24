@@ -1,9 +1,7 @@
 """Mutation-testing command helpers and mutmut output parsing.
 
-This is the only module that parses mutmut output. `apps/api/app/services/mutation.py`
-re-exports it, so the architecture rule in CLAUDE.md ("all mutmut parsing lives here")
-still holds while the dependency points from the API app into the `killscore` package
-rather than the other way around.
+This is the only module that parses mutmut output (the architecture rule in CLAUDE.md:
+"all mutmut parsing lives here").
 
 mutmut 3.6.0 output format (verified, see CLAUDE.md):
   `mutmut results --all true` -> `<module>.x_<funcname>__mutmut_<N>: <status>`

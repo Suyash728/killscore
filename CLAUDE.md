@@ -48,13 +48,16 @@ the misunderstanding into the suite and everything downstream would inherit it.
 - **Mutation testing**: mutmut 3.6.0 + pytest.
 - **TypeScript checks**: ts-morph 27.0.2 via Node 24 (`killscore/checks/node/`).
 - **Persistence**: SQLite at `~/.killscore/runs.db`, stdlib `sqlite3`, no ORM.
-- **Local web UI**: FastAPI + Jinja2 on `localhost:7777`, Tailwind and HTMX from CDN.
-  One process, no build step, no `node_modules`. Read-only: it cannot trigger a run.
-- **Terminal UI**: Textual 8.2.8 (`killscore tui`). No browser, no CDN, works offline.
-  Unlike the web UI it *may* trigger runs — see the scoping note in Architecture rules.
-- **Not built**: Next.js frontend, SSE streaming, Railway/Vercel deploy, any remote
-  surface. `apps/web/` is an empty directory. `apps/api/` holds only the mutmut re-export
-  and its test.
+- **Terminal UI**: Textual 8.2.8 (`killscore tui`). The one UI. No browser, no CDN, works
+  offline, and it *may* trigger runs.
+- **Packaging**: base install = typer, rich, pyyaml, packaging (what `audit`, `deps`, `models`,
+  `history`, `diff` need). Extras: `[agent]` claude-agent-sdk + anyio (`harden`, `baseline`,
+  `deps --explain`, either backend), `[tui]` textual, `[mcp]` mcp + anyio, `[all]`.
+  `killscore/extras.py` maps extra -> modules; a command whose extra is missing exits 3 with
+  the install line. The dev group pulls `killscore[all]`. `tests/test_packaging.py` builds the
+  wheel and asserts `Requires-Dist` exactly.
+- **Not built**: a web UI (removed 2026-11-24), Next.js frontend, SSE streaming,
+  Railway/Vercel deploy, any remote surface.
 
 ## Commands (verified)
 
@@ -76,7 +79,6 @@ uv run killscore harden <repo> --target 90 --max-total-cost 5
 uv run killscore deps <repo> --explain --backend ollama   # local model writes the prose
 uv run killscore history <repo> -n 10
 uv run killscore diff <repo>
-uv run killscore ui                           # localhost:7777, opens a browser
 uv run killscore tui                          # terminal UI; a=audit, h=harden, q=quit
 ```
 
@@ -87,11 +89,8 @@ uv run killscore tui                          # terminal UI; a=audit, h=harden, 
 ## Architecture rules
 
 - **All mutmut parsing lives in `killscore/mutation.py`.** It returns
-  `MutationRun(score, killed, survived, total, survivors)`.
-  `apps/api/app/services/mutation.py` re-exports it, so the API app depends on the
-  `killscore` package and never the reverse. Nothing else parses tool output.
-  Tests must patch `killscore.mutation.subprocess.run` — the re-export means patching the
-  `app.services.mutation` namespace intercepts nothing.
+  `MutationRun(score, killed, survived, total, survivors)`. Nothing else parses tool output.
+  Tests patch `killscore.mutation.subprocess.run`.
 - **All agent invocations go through `killscore/agent/runtime.py`.** Never call
   `claude_agent_sdk.query()` from anywhere else.
 - **Agent tool restriction is enforced by a `PreToolUse` hook, not `allowed_tools`.**
@@ -197,9 +196,9 @@ uv run killscore tui                          # terminal UI; a=audit, h=harden, 
   returns nothing, so it cannot influence a score, a discard, a stop reason or an exit code.
   `tests/test_tui.py` runs the loop with and without a listener and asserts identical
   outcomes. Same contract as `explain.py`.
-- **Presentation helpers shared by both UIs live in `killscore/presentation.py`.** Two
-  answers to "did this repository get worse" that disagree is worse than either alone; a test
-  asserts the web UI's `_trend`/`_rank` are literally the shared functions.
+- **Presentation helpers live in `killscore/presentation.py`.** Two answers to "did this
+  repository get worse" that disagree is worse than either alone; a test asserts the TUI's
+  `trend`/`rank` are literally the shared functions.
 - **All SQLite access lives in `killscore/store.py`.** `check` is a SQL reserved word,
   so the column is quoted as `"check"` in every statement — unquoting it anywhere is a
   syntax error at table creation, which `tests/test_store.py` pins.
@@ -210,13 +209,12 @@ uv run killscore tui                          # terminal UI; a=audit, h=harden, 
   *parent* repo's SHA and a dirty tree is not comparable to a commit.
 - **`diff` matches findings on `(check, file, claim, verdict)` — never the line number.**
   A finding that moved because someone added an import is the same finding.
-- **The web UI is read-only, and that rule is scoped to `killscore/ui/`** (scoped
-  2026-09-09). It renders the database and cannot trigger a run or write to a
-  repository. `killscore/tui/` **may** start an audit or a harden run — an interactive
-  UI that cannot trigger anything is a viewer. Two invariants did **not** move and are
-  asserted in `tests/test_tui.py`: the agent still works in a temp copy and the TUI shows
-  its diff without any apply path, and no model produces a verdict on either surface.
-- **Severity is a reserved *status* palette on both surfaces**; counts are ink and a small
+- **The TUI may start an audit or a harden run** — an interactive UI that cannot trigger
+  anything is a viewer. Two invariants are asserted in `tests/test_tui.py`: the agent still
+  works in a temp copy and the TUI shows its diff without any apply path, and no model
+  produces a verdict. Pressing `h` without the `[agent]` extra shows the install line;
+  `tui/workers.py` imports the harden loop lazily so `[tui]` alone can browse and audit.
+- **Severity is a reserved *status* palette**; counts are ink and a small
   coloured mark carries identity, so a colour never means anything on its own. In the
   terminal this matters more, because the palette belongs to the user — `severity_cell`
   always emits the word as well as the mark, and a test asserts it.
@@ -265,7 +263,7 @@ Built and shipped:
 | L2 | Four mechanical checks: api-resolution, stale-models, fail-open, composed |
 | L3 | Report layer — grouped findings, severity exit codes, `--json`, suite state |
 | L4 | Agent layer — `run_agent`, `baseline` generation, `harden` mutation loop |
-| L5 | Persistence (`~/.killscore/runs.db`), `history`, `diff`, and a local read-only `ui` |
+| L5 | Persistence (`~/.killscore/runs.db`), `history`, `diff` (the read-only web `ui` was removed 2026-11-24) |
 | L6 | Slopsquat guard — `slopsquat` check + `deps` command, deterministic risk score, PyPI only |
 | L7 | Check breadth (`import-effects`, `pinned-version`, `call-signature`) + Ollama backend |
 | L8 | Terminal UI — run browser, live audits, live `harden` dashboard |
@@ -286,6 +284,15 @@ integration, arbitrary repo-URL input, or multi-agent orchestration.
 
 ## Decisions that changed since the original guide
 
+- **The web UI, `apps/` and the heavy base install were removed (2026-11-24).** The Textual
+  TUI is the one UI; `killscore ui`, `killscore/ui/`, fastapi and jinja2 are gone. `apps/api`
+  only re-exported `killscore.mutation`; its recorded-output parser test moved to
+  `tests/test_mutation_parse.py`. The agent, TUI and MCP dependencies became extras so a
+  pre-commit hook installs four packages (verified in a clean venv: `audit` finds the
+  failopen-dirty defects, `harden`/`tui`/`mcp` exit 3 with the install line). The Ollama
+  backend also needs `[agent]`: `ToolGate` lives in `runtime.py`, which imports
+  claude-agent-sdk at the top, and one rule ("anything that runs a model needs `[agent]`")
+  was chosen over refactoring that import.
 - **`demo-repos/` and `docs/` were removed (2026-11-21).** The mutmut parser test's real
   recorded output and `pricing.py` moved to `tests/fixtures/mutmut/`; the coverage tests build
   a project in `tmp_path` and use the suite's own interpreter (`coverage` is in the dev group),

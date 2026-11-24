@@ -53,7 +53,7 @@ def test_a_bad_config_is_operational(monkeypatch, tmp_path):
     assert _run(monkeypatch, "audit", str(tmp_path), "--no-save") == 3
 
 
-@pytest.mark.parametrize("command", ["history", "diff", "tui", "ui"])
+@pytest.mark.parametrize("command", ["history", "diff", "tui", "mcp", "setup-node"])
 def test_every_command_is_registered_before_the_entry_point_runs(command):
     """The `__main__` guard used to sit above these definitions."""
     names = {c.name or c.callback.__name__ for c in cli.app.registered_commands}

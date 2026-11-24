@@ -21,19 +21,24 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
+# The base install is what a pre-commit hook needs: audit, deps, models, history, diff.
+# Each extra maps to modules in killscore/extras.py; tests/test_packaging.py builds the wheel
+# and asserts this exact set, so the two cannot drift.
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "pyyaml>=6.0",
-    "claude-agent-sdk>=0.2.128",
-    "anyio>=4.0",
-    "fastapi>=0.115",
-    "jinja2>=3.1",
     "packaging>=23.0",
-    "textual>=8.2",
-    "uvicorn>=0.30",
-    "mcp>=1.29,<2",  # FastMCP verified on 1.29; 2.x renamed it (MCPServer) and changed APIs
 ]
+
+[project.optional-dependencies]
+agent = ["claude-agent-sdk>=0.2.128", "anyio>=4.0"]  # harden, baseline, deps --explain
+tui = ["textual>=8.2"]
+mcp = [
+    "mcp>=1.29,<2",  # FastMCP verified on 1.29; 2.x renamed it (MCPServer) and changed APIs
+    "anyio>=4.0",
+]
+all = ["killscore[agent,tui,mcp]"]
 
 [project.urls]
 Homepage = "https://github.com/Suyash728/killscore"
@@ -45,6 +50,7 @@ killscore = "killscore.cli:main_entry"
 
 [dependency-groups]
 dev = [
+    "killscore[all]",  # the suite covers every extra
     "coverage>=7.6",
     "pytest>=8.0",
     "ruff>=0.6",
@@ -68,15 +74,10 @@ exclude = ["killscore/checks/node/node_modules"]
 include = ["killscore", "data", "scripts", "tests", "README.md", "LICENSE", "pyproject.toml", "uv.lock"]
 exclude = ["killscore/checks/node/node_modules"]
 
-# Single pytest config for the whole repo. Do NOT add [tool.pytest.ini_options] to
-# apps/api/pyproject.toml if one is ever added there: pytest uses exactly one config
-# file (the nearest one going up), so a second table would silently take over for any
-# invocation inside apps/api and diverge from root-level runs.
+# Single pytest config for the whole repo.
 [tool.pytest.ini_options]
-testpaths = ["tests", "apps/api/tests"]
-# "apps/api" is what makes `app` importable. Drop it once apps/api becomes a real
-# pip-installed package, otherwise `app` gets two module identities.
-pythonpath = [".", "apps/api"]
+testpaths = ["tests"]
+pythonpath = ["."]
 norecursedirs = ["tests/fixtures", ".venv", "node_modules", "mutants"]
 addopts = "-ra"
 markers = [
@@ -92,7 +93,7 @@ line-length = 100
 # Fixtures are deliberately malformed/unpinned sample repos, not project code.
 extend-exclude = ["tests/fixtures"]
 
-# Matches the import style already used in apps/api: one alphabetical run per section,
+# One alphabetical run per section,
 # with `import x` and `from x import y` interleaved by module name.
 [tool.ruff.lint.isort]
 force-sort-within-sections = true

@@ -101,6 +101,19 @@ def _fail(message: str) -> typer.Exit:
     return typer.Exit(code=EXIT_ERROR)
 
 
+def _require_extra(extra: str, command: str) -> None:
+    """A missing optional extra is an operational error: one line naming the install, exit 3."""
+    from killscore import extras
+
+    if extras.missing(extra):
+        # Printed raw and unwrapped: Rich would read `[agent]` as markup and drop it, and a
+        # wrapped line is not one a user can copy.
+        Console(stderr=True, soft_wrap=True).print(
+            f"error: {extras.install_hint(extra, command)}", markup=False
+        )
+        raise typer.Exit(code=EXIT_ERROR)
+
+
 @app.command()
 def audit(
     # No `exists=True`: Typer would exit 2 on a bad path, which is the "high severity" code.
@@ -297,12 +310,20 @@ def deps(
 
     explanation = None
     if explain:
-        from killscore.explain import explain_scan
+        from killscore import extras
 
-        explanation, failure = explain_scan(result, path, backend=backend)
+        if extras.missing("agent"):
+            # Losing the prose must never change the verdict a hook branches on.
+            explanation, failure = None, extras.install_hint("agent", "deps --explain")
+        else:
+            from killscore.explain import explain_scan
+
+            explanation, failure = explain_scan(result, path, backend=backend)
         if failure:
             # Losing the prose must never change the verdict a hook branches on.
-            Console(stderr=True).print(f"warning: could not generate an explanation: {failure}")
+            Console(stderr=True, soft_wrap=True).print(
+                f"warning: could not generate an explanation: {failure}", markup=False
+            )
 
     code = deps_exit_code(result, fail_on)
     if fmt == "json":
@@ -329,6 +350,7 @@ def baseline(
     """Generate a pytest suite for an untested module, discarding whatever fails."""
     if not path.is_dir():
         raise _fail(f"{path} is not a directory")
+    _require_extra("agent", "baseline")
 
     from killscore.agent.baseline import generate_baseline
     from killscore.agent.workspace import diff_workspace, workspace
@@ -388,6 +410,7 @@ def harden(
     """Raise a repository's mutation score. Runs in a temp copy; applies nothing."""
     if not path.is_dir():
         raise _fail(f"{path} is not a directory")
+    _require_extra("agent", "harden")
 
     from killscore.agent.harden import harden as run_harden
 
@@ -536,8 +559,9 @@ def mcp() -> None:
     Tools: killscore_audit, killscore_deps, killscore_models. stdout carries JSON-RPC
     and nothing else; logs go to stderr. Register it with, for example:
 
-        claude mcp add killscore -- uvx killscore mcp
+        claude mcp add killscore -- uvx --from 'killscore[mcp]' killscore mcp
     """
+    _require_extra("mcp", "mcp")
     from killscore.mcp_server import serve
 
     serve()
@@ -567,49 +591,15 @@ def setup_node(
 
 @app.command()
 def tui() -> None:
-    """Browse recorded runs in the terminal.
+    """Browse recorded runs, start an audit, or watch a harden run, in the terminal.
 
-    Unlike `ui`, this needs no browser and no network: the web UI loads Tailwind and HTMX
-    from a CDN and is unstyled offline. Interactive, so its exit status carries no verdict -
+    Needs no browser and no network. Interactive, so its exit status carries no verdict -
     always 0. Use `audit` in a hook or CI, where severity owns the exit code.
     """
+    _require_extra("tui", "tui")
     from killscore.tui import create_app
 
     create_app().run()
-
-
-@app.command()
-def ui(
-    port: Annotated[int, typer.Option("--port", help="Port to serve on.")] = 7777,
-    host: Annotated[str, typer.Option("--host", help="Interface to bind.")] = "127.0.0.1",
-    no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not open a browser.")] = False,
-) -> None:
-    """Serve the local run browser. Read-only: it cannot trigger a run."""
-    import threading
-    import webbrowser
-
-    import uvicorn
-
-    from killscore.ui import create_app
-    from killscore.ui.app import LOOPBACK_HOSTS
-
-    url = f"http://{host}:{port}"
-    Console().print(f"killscore ui  {url}   (ctrl-c to stop)")
-
-    # The Host check only works when every legitimate name is known. On a loopback bind it
-    # is; on any other interface the user chose exposure, so say so instead of guessing.
-    loopback = host in LOOPBACK_HOSTS
-    if not loopback:
-        Console(stderr=True).print(
-            f"warning: serving run data on {host}, not loopback; anyone who can reach it can read it"
-        )
-
-    if not no_browser:
-        # Open after a short delay so the server is listening when the tab loads.
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-
-    app_ = create_app(allowed_hosts=LOOPBACK_HOSTS if loopback else None)
-    uvicorn.run(app_, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":  # pragma: no cover

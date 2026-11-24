@@ -21,7 +21,7 @@ and neither can change a score, a severity or an exit code.
 - [Dependency risk: `deps`](#dependency-risk-deps)
 - [Raising the mutation score: `harden`](#raising-the-mutation-score-harden)
 - [Reports, exit codes and configuration](#reports-exit-codes-and-configuration)
-- [History and the two UIs](#history-and-the-two-uis)
+- [History and the terminal UI](#history-and-the-terminal-ui)
 - [Maintaining the data](#maintaining-the-data)
 - [Development](#development)
 
@@ -58,9 +58,22 @@ a CI gate.
 
 ```sh
 uvx killscore audit .        # from a wheel, no checkout needed
-uv sync                      # or from a checkout: Python package and CLI
+uv sync                      # or from a checkout: everything, including the extras
 killscore setup-node         # optional: enables the TypeScript checks
 ```
+
+The base install is what a pre-commit hook needs: `audit`, `deps`, `models`, `history` and
+`diff`, with four small dependencies. Everything else is an extra:
+
+| Extra | Adds | Install |
+|---|---|---|
+| `agent` | `harden`, `baseline`, `deps --explain` (Claude or a local Ollama model) | `uv tool install 'killscore[agent]'` |
+| `tui` | `killscore tui` | `uv tool install 'killscore[tui]'` |
+| `mcp` | `killscore mcp` | `uv tool install 'killscore[mcp]'` |
+| `all` | all three | `uv tool install 'killscore[all]'` |
+
+A command whose extra is missing exits `3` with the exact install line, never a traceback.
+One-off runs work the same way: `uvx --from 'killscore[agent]' killscore harden .`.
 
 The wheel carries its data: the model deprecation registry and both package corpora. The
 TypeScript checks need ts-morph, which a wheel cannot ship, so `setup-node` installs it into
@@ -97,7 +110,7 @@ steps:
 
 **SARIF.** `--format sarif` writes SARIF 2.1.0, validated against the published schema: one
 rule per `(check, verdict)`, severity as `error`/`warning`/`note`, repo-relative locations,
-fingerprints from the line-free identity (see [`diff`](#history-and-the-two-uis)), and
+fingerprints from the line-free identity (see [`diff`](#history-and-the-terminal-ui)), and
 skipped checks as tool notifications, so "no results" and "could not run" stay
 distinguishable.
 
@@ -105,7 +118,7 @@ distinguishable.
 over stdio, so a coding agent can check its own work before it says it is done:
 
 ```sh
-claude mcp add killscore -- uvx killscore mcp
+claude mcp add killscore -- uvx --from 'killscore[mcp]' killscore mcp
 ```
 
 Results are the same JSON documents plus `exit_code` and `exit_meaning`; a bad request is
@@ -526,7 +539,7 @@ A baseline is the audit's own JSON: `killscore audit . --format json > known.jso
 line numbers, so a known finding that moved is still known. The run database still records
 every finding.
 
-## History and the two UIs
+## History and the terminal UI
 
 Every `audit` records a run in `~/.killscore/runs.db` (`--no-save` opts out), keyed to the
 git SHA, so a run is comparable to a commit.
@@ -534,8 +547,7 @@ git SHA, so a run is comparable to a commit.
 ```sh
 killscore history <path> -n 10   # recent runs with severity counts
 killscore diff <path>            # what appeared or disappeared since the previous run
-killscore tui                    # terminal UI: a = audit, h = harden, enter = open, q = quit
-killscore ui                     # localhost:7777, a read-only browser over the database
+killscore tui                    # terminal UI ([tui] extra): a = audit, h = harden, enter = open, q = quit
 ```
 
 A run also records the git root, whether the tree was **dirty**, and whether the audited path
@@ -546,16 +558,12 @@ against uncommitted work must never look like a run against a commit.
 finding that shifted because someone added an import above it is the same finding; including
 the line would turn one unrelated edit into a screenful of false churn.
 
-**The terminal UI** needs no browser and no network. It can do three things the web UI
-cannot: run an audit and show findings as each check lands; show `harden` working, with each
+**The terminal UI** needs no browser and no network. It can run an audit and show findings as each check lands; show `harden` working, with each
 iteration's before-and-after score, tests written and discarded, and denied tool calls (from
 the CLI, the loop prints nothing until it prints everything); and show the resulting diff.
 There is no apply button, and a test asserts there is no apply path at all. Its exit status
-is always `0`; `audit` owns exit codes.
-
-**The web UI** is read-only: it renders the database and cannot trigger a run. Tailwind and
-HTMX load from a CDN, which is what "no build step, no node_modules" costs, so offline it
-still works but is unstyled.
+is always `0`; `audit` owns exit codes. Browsing and audits need only `[tui]`; pressing `h`
+without `[agent]` shows the install line instead of starting.
 
 ## Maintaining the data
 
@@ -611,10 +619,9 @@ uv run ruff check .
 uv run pytest -q
 ```
 
-The suite is offline. pytest is configured once, at the repository root: do not add
-`[tool.pytest.ini_options]` to `apps/api/pyproject.toml` if one is ever created there, because
-pytest uses exactly one config file (the nearest going up), so a second table would silently
-take over for runs inside that directory.
+The suite is offline and hermetic: TypeScript tests carry `@pytest.mark.ts_morph` and skip
+with the reason when node or the helper is absent. `uv sync` installs every extra through the
+dev group, so the suite covers all of them.
 
 The deliberately broken sample repositories that the checks are tested against live in
 `tests/fixtures/` and are excluded from killscore's own self-audit.

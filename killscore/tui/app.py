@@ -1,10 +1,9 @@
 """The terminal UI.
 
-Why this exists alongside `killscore ui`, which already browses the same database:
+The one interactive surface (a read-only web UI existed until 2026-11-24 and was removed).
 
-- The web UI loads Tailwind and HTMX from a CDN, so it is unstyled without a network. For a
-  tool whose argument is that it works offline and deterministically, having the only visual
-  surface degrade offline is the wrong shape. This one has no such dependency.
+- It needs no browser and no network, which suits a tool whose argument is that it works
+  offline and deterministically.
 - `harden` is silent for minutes at a time. The mutation loop baselines, targets survivors,
   writes tests, discards failures and re-measures, and none of it is visible until the run
   ends. That is the gap a terminal UI is actually good at.
@@ -16,8 +15,7 @@ calls `anyio.run()`, which starts a *second* one, and nesting event loops raises
 its result back as a message. Nothing calls into those from the UI thread - the first is a
 crash and the rest freeze the interface.
 
-**Colour never carries meaning alone.** Severity gets a text label as well as a style, the
-same rule the web UI follows. In a terminal the palette belongs to the user, not to us.
+**Colour never carries meaning alone.** Severity gets a text label as well as a style. In a terminal the palette belongs to the user, not to us.
 """
 
 from __future__ import annotations
@@ -32,6 +30,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Input, Static, Switch
 
+from killscore import extras
 from killscore.checks.runner import ALL_CHECKS, DEFAULT_CHECKS
 from killscore.presentation import rank, severity_counts, trend
 from killscore.store import (
@@ -197,9 +196,7 @@ class RunScreen(Screen):
 class AuditScreen(Screen):
     """Run checks against a repository and watch findings arrive.
 
-    The web UI cannot do this by rule - it renders the database and nothing else. That rule
-    is scoped to `killscore/ui/`; this surface may start a run. What does *not* change: the
-    agent still works in a temp copy and applies nothing, and no model produces a verdict
+    This surface may start a run. What does *not* change: the agent still works in a temp copy and applies nothing, and no model produces a verdict
     here. This screen only calls the same mechanical checks the CLI calls.
     """
 
@@ -351,6 +348,9 @@ class HardenScreen(Screen):
         root = Path(self.query_one("#harden-path", Input).value.strip() or ".")
         if not root.is_dir():
             self._status(f"not a directory: {root}")
+            return
+        if extras.missing("agent"):
+            self._status(extras.install_hint("agent", "harden"))
             return
 
         self._harden_running = True
