@@ -25,11 +25,11 @@ def _project(tmp_path: Path, layout: str) -> Path:
 
 def _unresolved(tmp_path: Path) -> list[str]:
     result = check_typescript_apis(tmp_path)
-    if result.skipped:
-        pytest.skip(result.skip_reason or "TypeScript checks unavailable")
+    assert not result.skipped, result.skip_reason
     return [f.claim for f in result.findings if f.verdict == "unresolved-import"]
 
 
+@pytest.mark.ts_morph
 def test_an_existing_stylesheet_import_is_silent(tmp_path):
     app = _project(tmp_path, 'import "./globals.css";\nimport logo from "../logo.svg";\n')
     (app / "globals.css").write_text("body {}\n")
@@ -38,12 +38,14 @@ def test_an_existing_stylesheet_import_is_silent(tmp_path):
     assert _unresolved(tmp_path) == []
 
 
+@pytest.mark.ts_morph
 def test_a_missing_stylesheet_import_is_still_reported(tmp_path):
     _project(tmp_path, 'import "./missing.css";\n')
 
     assert _unresolved(tmp_path) == ['import from "./missing.css"']
 
 
+@pytest.mark.ts_morph
 def test_a_missing_source_import_is_still_reported(tmp_path):
     _project(tmp_path, 'import { x } from "./nowhere";\nexport const y = x;\n')
 

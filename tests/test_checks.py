@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from killscore.checks import composed, node_helper
 from killscore.checks.api_resolution import (
     check_python_apis,
     check_typescript_apis,
@@ -127,6 +128,7 @@ def test_api_resolution_skips_rather_than_guessing_when_there_is_no_environment(
     assert "no virtualenv" in result.skip_reason
 
 
+@pytest.mark.ts_morph
 def test_typescript_resolution_skips_without_node_modules():
     """No node_modules means no answer - a skip with the reason, not an invented location."""
     result = check_typescript_apis(FIXTURES / "failopen-dirty")
@@ -134,6 +136,22 @@ def test_typescript_resolution_skips_without_node_modules():
     assert result.skipped is True
     assert result.findings == []
     assert "node_modules" in result.skip_reason
+
+
+
+@pytest.mark.parametrize("check", [check_typescript_apis, check_typescript_fail_open])
+def test_typescript_checks_skip_with_the_setup_hint_when_the_helper_is_missing(
+    check, tmp_path, monkeypatch
+):
+    """No ts-morph helper anywhere: skip and say how to install it, on any machine."""
+    monkeypatch.setattr(node_helper, "_candidates", lambda: [tmp_path])
+
+    result = check(FIXTURES / "failopen-dirty")
+
+    assert result.skipped is True
+    assert result.findings == []
+    assert result.skip_reason == node_helper.missing_reason()
+    assert "killscore setup-node" in result.skip_reason
 
 
 def test_rank_similar_names_puts_the_real_name_first():
@@ -277,6 +295,7 @@ def test_fail_open_finds_every_defect_shape_in_python():
     assert high == {"env-default-degrades-url", "gate-fails-open"}
 
 
+@pytest.mark.ts_morph
 def test_fail_open_finds_every_defect_shape_in_typescript():
     result = check_typescript_fail_open(FIXTURES / "failopen-dirty")
 
@@ -368,7 +387,10 @@ def test_linter_paths_are_relative_even_when_the_root_is_relative():
     assert all(f.file == "app.py" for f in findings)
 
 
-def test_a_missing_linter_skips_with_a_reason_instead_of_failing():
+def test_a_missing_linter_skips_with_a_reason_instead_of_failing(monkeypatch):
+    # Make every linter missing, whatever this machine has on PATH. The fixture has no
+    # .venv or node_modules of its own, so `which` is the only place one could come from.
+    monkeypatch.setattr(composed.shutil, "which", lambda *args, **kwargs: None)
     results = {result.check: result for result in check_composed(FIXTURES / "failopen-clean")}
 
     for tool in ("semgrep", "vulture", "eslint", "knip"):

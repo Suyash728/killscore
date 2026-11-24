@@ -188,6 +188,7 @@ def test_no_color_and_NO_COLOR_produce_identical_ansi_free_output(monkeypatch):
 # ------------------------------------------------------------------------------ JSON
 
 
+@pytest.mark.ts_morph
 def test_json_output_is_parseable_and_carries_the_schema():
     result = runner.invoke(
         app, ["audit", str(FIXTURES / "failopen-dirty"), "--only", "fail-open", "--json", "--no-save"]

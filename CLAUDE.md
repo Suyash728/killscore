@@ -235,6 +235,12 @@ uv run killscore tui                          # terminal UI; a=audit, h=harden, 
   Unknown renders `n/a (reason)`, never `0%`.
 - **The agent never writes to a real repository.** It works in a temp copy
   (`killscore/agent/workspace.py`); runs end by printing a diff and applying nothing.
+- **The suite is hermetic; a TypeScript test declares `@pytest.mark.ts_morph`.** The marker
+  (decided once, in `tests/conftest.py`) skips with the reason when node or the ts-morph
+  helper is absent. Never `pytest.skip` on `result.skipped` in a test: that also hides a helper
+  that is installed but broken. A test asserting "tool X is missing" makes it missing
+  (monkeypatch `shutil.which` / `node_helper._candidates`), never relies on the real PATH.
+  Verified 2026-11-24 with `PATH=/usr/bin:/bin`, a fake `HOME` and no helper dir: 0 failures.
 - Every subprocess call has an explicit timeout. No exceptions.
 - Severity owns the exit code: `0` clean, `1` medium, `2` high, `3` operational error.
   Operational failures must never exit `2`, or a pre-commit hook cannot tell a bad path
