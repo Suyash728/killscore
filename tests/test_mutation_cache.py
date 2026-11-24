@@ -12,8 +12,7 @@ strength of a number that could not move. Measured on the pricing module now kep
 tests/fixtures/mutmut: a test that takes the score from 61.7% to 63.6% read as 61.7% with the
 cache intact.
 
-Per CLAUDE.md, subprocess is patched at `killscore.mutation.subprocess.run` - patching the
-`app.services.mutation` re-export namespace intercepts nothing.
+Per CLAUDE.md, subprocess is patched at `killscore.mutation.subprocess.run`.
 """
 
 from pathlib import Path

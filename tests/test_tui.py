@@ -70,12 +70,12 @@ def seeded(tmp_path: Path, findings=None) -> Path:
 # ------------------------------------------------------------------ shared helpers
 
 
-def test_both_surfaces_share_one_definition_of_a_trend():
-    """Two answers to "did this get worse" that disagree is worse than either alone."""
-    from killscore.ui import app as web
+def test_the_tui_uses_the_shared_definition_of_a_trend():
+    """One answer to "did this get worse", kept in presentation.py, not redefined here."""
+    from killscore.tui import app as tui_app
 
-    assert web._trend is trend
-    assert web._rank is rank
+    assert tui_app.trend is trend
+    assert tui_app.rank is rank
 
 
 def test_severity_is_never_carried_by_colour_alone():
@@ -491,6 +491,30 @@ async def test_the_local_model_toggle_selects_the_ollama_backend(tmp_path):
             tui_app.run_harden = original
 
     assert captured["backend"] == "ollama"
+
+
+@pytest.mark.anyio
+async def test_harden_without_the_agent_extra_shows_the_install_line(tmp_path, monkeypatch):
+    """Browsing and audit work with just [tui]; pressing h without [agent] must say why."""
+    from killscore import extras
+    from killscore.tui import app as tui_app
+
+    monkeypatch.setattr(extras, "missing", lambda extra: extra == "agent")
+    called = []
+    monkeypatch.setattr(tui_app, "run_harden", lambda *a, **kw: called.append(a))
+
+    app = create_app(db_path=tmp_path / "runs.db")
+    async with app.run_test() as pilot:
+        screen = HardenScreen(path=str(DIRTY))
+        app.push_screen(screen)
+        await pilot.pause()
+        screen.action_start()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        status = str(screen.query_one("#harden-status").content)
+        assert "uv tool install 'killscore[agent]'" in status
+        assert called == []
 
 
 @pytest.mark.anyio

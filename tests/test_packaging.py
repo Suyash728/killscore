@@ -8,9 +8,16 @@ that makes it work, so it cannot silently regress.
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
+import subprocess
 import tomllib
+import zipfile
 
-from killscore import __version__, risk
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+import pytest
+
+from killscore import __version__, extras, risk
 from killscore.checks import node_helper, stale_models
 from killscore.checks.node_helper import helper_dir, sync_scripts
 
@@ -34,11 +41,58 @@ def test_the_version_has_one_source():
     assert __version__.count(".") == 2
 
 
-def test_runtime_imports_are_declared_dependencies():
-    """`killscore ui` imports uvicorn; it was only present transitively."""
-    declared = " ".join(PYPROJECT["project"]["dependencies"])
-    for name in ("uvicorn", "fastapi", "typer", "packaging"):
-        assert name in declared
+BASE = {"typer", "rich", "pyyaml", "packaging"}
+EXTRAS = {
+    "agent": {"claude-agent-sdk", "anyio"},
+    "tui": {"textual"},
+    "mcp": {"mcp", "anyio"},
+    "all": {"claude-agent-sdk", "anyio", "textual", "mcp"},
+}
+
+
+def _requires_by_extra(metadata: str) -> dict[str | None, set[str]]:
+    """Group a wheel's Requires-Dist names by the extra that pulls them (None = base)."""
+    grouped: dict[str | None, set[str]] = {}
+    for line in metadata.splitlines():
+        if not line.startswith("Requires-Dist:"):
+            continue
+        requirement = Requirement(line.removeprefix("Requires-Dist:").strip())
+        extra = None
+        if requirement.marker is not None:
+            extra = next(
+                (name for name in [*EXTRAS] if requirement.marker.evaluate({"extra": name})), None
+            )
+            assert extra is not None, f"marker other than an extra: {line}"
+        grouped.setdefault(extra, set()).add(canonicalize_name(requirement.name))
+    return grouped
+
+
+def test_the_built_wheel_declares_exactly_the_base_set_and_each_extra(tmp_path):
+    """The base install is what a pre-commit hook needs; everything else is an extra."""
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv is not on PATH, so the wheel cannot be built here")
+    built = subprocess.run(
+        [uv, "build", "--wheel", "--out-dir", str(tmp_path), str(ROOT)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert built.returncode == 0, built.stderr
+    (wheel,) = tmp_path.glob("killscore-*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        (name,) = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
+        grouped = _requires_by_extra(archive.read(name).decode())
+
+    assert grouped.pop(None) == BASE
+    assert grouped == EXTRAS
+
+
+def test_every_declared_extra_is_one_the_cli_knows_how_to_hint():
+    declared = set(PYPROJECT["project"]["optional-dependencies"])
+
+    assert declared == {*extras.EXTRA_MODULES, "all"}
 
 
 def test_the_entry_point_maps_crashes_to_exit_three():
@@ -112,5 +166,5 @@ def test_sync_leaves_identical_scripts_alone(tmp_path):
 
 def test_mcp_is_capped_below_the_version_that_renamed_fastmcp():
     """A fresh install resolved mcp 2.x, where `mcp.server.fastmcp` no longer exists."""
-    spec = next(d for d in PYPROJECT["project"]["dependencies"] if d.startswith("mcp"))
+    spec = next(d for d in PYPROJECT["project"]["optional-dependencies"]["mcp"] if d.startswith("mcp"))
     assert "<2" in spec

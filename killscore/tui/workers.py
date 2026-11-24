@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 import time
+from typing import TYPE_CHECKING
 
-from killscore.agent.harden import HardenEvent, HardenResult, harden
 from killscore.checks.base import CheckResult
 from killscore.checks.runner import iter_checks
 from killscore.config import ConfigError
@@ -29,6 +29,11 @@ from killscore.detect import profile_repository
 from killscore.report import Report
 from killscore.store import save_run
 from killscore.suite import inspect_suite
+
+
+if TYPE_CHECKING:
+    # The agent is the optional [agent] extra; the TUI browses and audits without it.
+    from killscore.agent.harden import HardenEvent, HardenResult
 
 
 @dataclass(frozen=True)
@@ -115,6 +120,8 @@ def run_harden(
 
     The agent works in a temp copy and this returns a diff. Nothing here applies it.
     """
+    from killscore.agent.harden import harden
+
     return harden(
         root,
         target_score=target_score,

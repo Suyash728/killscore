@@ -1,11 +1,10 @@
-"""Presentation helpers shared by the web UI and the terminal UI.
+"""Presentation helpers: what a trend is and how severity ranks.
 
-Neither surface may define its own idea of what a trend is or how severity ranks. Two
-answers to "did this repository get worse" that disagree is worse than either answer alone,
-so both import from here.
+No surface may define its own. Two answers to "did this repository get worse" that disagree
+is worse than either answer alone, so the TUI and the CLI import from here.
 
 Deliberately dependency-free: no store import (store imports report, and report is imported
-by both UIs - a cycle waiting to happen), no rendering, no I/O. Everything here reads the
+by the TUI - a cycle waiting to happen), no rendering, no I/O. Everything here reads the
 `.counts` mapping that `RunRow` already exposes.
 """
 

@@ -1,12 +1,14 @@
+"""The mutmut parser against real, recorded mutmut 3.6.0 output (moved from apps/api)."""
+
 from pathlib import Path
 import re
 import subprocess
 from unittest.mock import patch
 
-from app.services.mutation import DEFAULT_TIMEOUT_SECONDS, Survivor, get_survivors
+from killscore.mutation import DEFAULT_TIMEOUT_SECONDS, Survivor, get_survivors
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MUTMUT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "mutmut"
 SAMPLE_OUTPUT_PATH = MUTMUT_FIXTURE / "mutmut-sample-output.txt"
 PRICING_SOURCE_PATH = MUTMUT_FIXTURE / "src" / "pricing.py"
@@ -41,9 +43,7 @@ def test_get_survivors_parses_the_recorded_mutmut_3_6_output():
         assert command[1] == "show"
         return subprocess.CompletedProcess(command, 0, stdout=show_output)
 
-    # The implementation moved to killscore.mutation, so that is where subprocess lives.
-    # app.services.mutation re-exports it; patching this module's namespace would no
-    # longer intercept the call.
+    # killscore.mutation is the only module that runs mutmut, so that is where to patch.
     with patch("killscore.mutation.subprocess.run", side_effect=run_mutmut) as run:
         survivors = get_survivors(PRICING_SOURCE_PATH.parents[1])
 

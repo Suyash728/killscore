@@ -131,7 +131,7 @@ def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
     """Open (and create) the run database. Callers own closing it."""
     path = Path(db_path) if db_path else DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    # The TUI's audit worker, a pre-commit hook and the web UI can all hold the database at
+    # The TUI's audit worker, a pre-commit hook and `history` can all hold the database at
     # once. WAL lets readers proceed during a write, and the timeout waits out a writer
     # instead of failing with "database is locked".
     connection = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS)
