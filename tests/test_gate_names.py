@@ -18,8 +18,7 @@ from killscore.checks.fail_open import check_python_fail_open, check_typescript_
 def _gates(tmp_path: Path, name: str, source: str, check) -> list[str]:
     (tmp_path / name).write_text(textwrap.dedent(source))
     result = check(tmp_path)
-    if result.skipped:
-        pytest.skip(result.skip_reason or "checks unavailable")
+    assert not result.skipped, result.skip_reason
     return [f.claim for f in result.findings if f.verdict == "gate-fails-open"]
 
 
@@ -55,10 +54,12 @@ export function {name}(user: any): boolean {{
 """
 
 
+@pytest.mark.ts_morph
 def test_typescript_mode_resolver_is_not_a_gate(tmp_path):
     assert _gates(tmp_path, "app.ts", TS_GATE.format(name="resolveAuthMode"), check_typescript_fail_open) == []
 
 
+@pytest.mark.ts_morph
 def test_typescript_question_shaped_gate_still_fires(tmp_path):
     claims = _gates(tmp_path, "app.ts", TS_GATE.format(name="canAccess"), check_typescript_fail_open)
     assert len(claims) == 1 and claims[0].startswith("canAccess()")

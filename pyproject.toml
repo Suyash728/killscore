@@ -79,6 +79,9 @@ testpaths = ["tests", "apps/api/tests"]
 pythonpath = [".", "apps/api"]
 norecursedirs = ["tests/fixtures", ".venv", "node_modules", "mutants"]
 addopts = "-ra"
+markers = [
+    "ts_morph: needs node and the ts-morph helper; skipped with the reason when absent (tests/conftest.py)",
+]
 
 # Self-audit: these are deliberately broken sample repositories, not killscore's code.
 [tool.killscore]

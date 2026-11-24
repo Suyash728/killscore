@@ -26,8 +26,7 @@ def _python(tmp_path: Path, source: str) -> list[str]:
 def _typescript(tmp_path: Path, source: str) -> list[str]:
     (tmp_path / "app.ts").write_text(textwrap.dedent(source))
     result = check_typescript_fail_open(tmp_path)
-    if result.skipped:
-        pytest.skip(result.skip_reason or "TypeScript checks unavailable")
+    assert not result.skipped, result.skip_reason
     return [f.verdict for f in result.findings if f.verdict == "env-default-degrades-url"]
 
 
@@ -190,6 +189,7 @@ def test_unguarded_python_env_default_still_fires(tmp_path, source):
         ),
     ],
 )
+@pytest.mark.ts_morph
 def test_guarded_typescript_env_default_is_silent(tmp_path, source):
     assert _typescript(tmp_path, source) == []
 
@@ -210,6 +210,7 @@ def test_guarded_typescript_env_default_is_silent(tmp_path, source):
         ),
     ],
 )
+@pytest.mark.ts_morph
 def test_unguarded_typescript_env_default_still_fires(tmp_path, source):
     assert _typescript(tmp_path, source) == ["env-default-degrades-url"]
 
@@ -308,10 +309,12 @@ def test_field_test_shapes_still_fire(tmp_path, source):
     assert _python(tmp_path, source) == ["env-default-degrades-url"]
 
 
+@pytest.mark.ts_morph
 def test_a_credential_named_env_default_is_silent_in_typescript(tmp_path):
     assert _typescript(tmp_path, 'export const webhookSecret = process.env.WEBHOOK_SECRET || "";\n') == []
 
 
+@pytest.mark.ts_morph
 def test_a_later_comparison_guards_in_typescript(tmp_path):
     source = """
     export function overridden(): boolean {
