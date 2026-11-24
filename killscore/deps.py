@@ -272,6 +272,16 @@ def _read_pyproject(path: Path) -> tuple[list[Declaration], list[Unparsed]]:
                 if isinstance(group, dict):
                     declarations.extend(_parse_poetry_table(group.get("dependencies"), source))
 
+    # `all = ["myproject[a,b]"]` and a dev group's `"myproject[all]"` are the standard way to
+    # compose extras. They name the project being built, which an installer resolves from
+    # the source tree, not the index - so they are not dependencies, and scoring one as a
+    # package reads an unpublished project as "nonexistent" (a false HIGH, found on
+    # killscore's own pyproject on 2026-11-24).
+    own = project.get("name") if isinstance(project, dict) else None
+    if isinstance(own, str) and own.strip():
+        own_name = canonicalize_python_name(own)
+        declarations = [d for d in declarations if canonicalize_python_name(d.name) != own_name]
+
     return declarations, []
 
 
